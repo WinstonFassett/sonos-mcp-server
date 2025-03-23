@@ -1,0 +1,1 @@
+npx -y supergateway --port 8000 --stdio "uv run mcp run main.py"
