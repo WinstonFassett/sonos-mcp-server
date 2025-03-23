@@ -87,10 +87,6 @@ def now_playing() -> List[Dict[str, str]]:
     return infos
 
 @mcp.tool()
-def get_device_names() -> List[str]:
-    return list(get_devices().keys())
-
-@mcp.tool()
 def get_device_state(name: Optional[str] = None) -> Dict[str, Any]:
     device = get_device(name)
     return {
