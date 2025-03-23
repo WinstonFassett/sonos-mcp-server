@@ -1,1 +1,1 @@
-uv run mcp dev main.py
+uv run mcp dev server.py
