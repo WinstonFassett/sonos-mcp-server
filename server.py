@@ -106,6 +106,7 @@ def now_playing() -> List[Dict[str, str]]:
     Returns:
         List[Dict[str, str]]: A list of dictionaries containing the name, title, artist, and album of currently playing tracks.
     """
+    devices = get_devices()
     infos = []
     for device in devices.values():
         track = device.get_current_track_info()
