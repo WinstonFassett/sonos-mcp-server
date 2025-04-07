@@ -141,49 +141,74 @@ def get_device_state(name: Optional[str] = None) -> Dict[str, Any]:
     }
 
 @mcp.tool()
-def pause(name: Optional[str] = None) -> None:
+def pause(name: Optional[str] = None) -> Dict[str, Any]:
     """Pause playback on a Sonos device.
     
     Args:
         name: The name of the device to pause. If None, uses the current device.
+        
+    Returns:
+        Dict[str, Any]: The device's state after pausing, including name, volume, state, and track info.
     """
-    get_device(name).pause()
+    device = get_device(name)
+    device.pause()
+    return get_info_from(device)
 
 @mcp.tool()
-def stop(name: Optional[str] = None) -> None:
+def stop(name: Optional[str] = None) -> Dict[str, Any]:
     """Stop playback on a Sonos device.
     
     Args:
         name: The name of the device to stop. If None, uses the current device.
+        
+    Returns:
+        Dict[str, Any]: The device's state after stopping, including name, volume, state, and track info.
     """
-    get_device(name).stop()
+    device = get_device(name)
+    device.stop()
+    return get_info_from(device)
 
 @mcp.tool()
-def play(name: Optional[str] = None) -> None:
+def play(name: Optional[str] = None) -> Dict[str, Any]:
     """Start playback on a Sonos device.
     
     Args:
         name: The name of the device to start playback on. If None, uses the current device.
+        
+    Returns:
+        Dict[str, Any]: The device's state after starting playback, including name, volume, state, and track info.
     """
-    get_device(name).play()
+    device = get_device(name)
+    device.play()
+    return get_info_from(device)
 
 @mcp.tool()
-def next(name: Optional[str] = None) -> None:
+def next(name: Optional[str] = None) -> Dict[str, Any]:
     """Skip to the next track on a Sonos device.
     
     Args:
         name: The name of the device to skip the track on. If None, uses the current device.
+        
+    Returns:
+        Dict[str, Any]: The device's state after skipping to the next track, including name, volume, state, and track info.
     """
-    get_device(name).next()
+    device = get_device(name)
+    device.next()
+    return get_info_from(device)
 
 @mcp.tool()
-def previous(name: Optional[str] = None) -> None:
+def previous(name: Optional[str] = None) -> Dict[str, Any]:
     """Skip to the previous track on a Sonos device.
     
     Args:
         name: The name of the device to skip the track on. If None, uses the current device.
+        
+    Returns:
+        Dict[str, Any]: The device's state after skipping to the previous track, including name, volume, state, and track info.
     """
-    get_device(name).previous()
+    device = get_device(name)
+    device.previous()
+    return get_info_from(device)
 
 @mcp.tool()
 def get_queue(name: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -226,9 +251,15 @@ def mode(
     return device.play_mode
 
 @mcp.tool()
-def partymode() -> None:
-    """Enable party mode on the current Sonos device."""
-    get_device().partymode()
+def partymode() -> Dict[str, Any]:
+    """Enable party mode on the current Sonos device.
+    
+    Returns:
+        Dict[str, Any]: The device's state after enabling party mode, including name, volume, state, and track info.
+    """
+    device = get_device()
+    device.partymode()
+    return get_info_from(device)
 
 @mcp.tool()
 def speaker_info(name: Optional[str] = None) -> Dict[str, str]:
@@ -276,19 +307,6 @@ def volume(volume: Optional[int] = None, name: Optional[str] = None) -> int:
         ValueError: If volume is not between 0 and 99.
         ValueError: If the specified device is not found.
     """
-    """Get or set the volume of a Sonos device.
-    
-    Args:
-        volume: The volume level to set (0-99). If None, returns current volume.
-        name: The name of the device to control. If None, uses the current device.
-        
-    Returns:
-        int: The current volume level after the operation.
-        
-    Raises:
-        ValueError: If volume is not between 0 and 99.
-        ValueError: If the specified device is not found.
-    """
     device = get_device(name)
     if volume is not None:
         if not 0 <= volume <= 99:
@@ -297,12 +315,15 @@ def volume(volume: Optional[int] = None, name: Optional[str] = None) -> int:
     return device.volume
 
 @mcp.tool()
-def skip(increment: int = 1, name: Optional[str] = None) -> None:
+def skip(increment: int = 1, name: Optional[str] = None) -> Dict[str, Any]:
     """Skip tracks in the queue for a Sonos device.
     
     Args:
         increment: The number of tracks to skip forward. Defaults to 1.
         name: The name of the device to skip tracks on. If None, uses the current device.
+        
+    Returns:
+        Dict[str, Any]: The device's state after skipping tracks, including name, volume, state, and track info.
         
     Raises:
         ValueError: If the new track position is out of the queue's range.
@@ -316,14 +337,18 @@ def skip(increment: int = 1, name: Optional[str] = None) -> None:
         raise ValueError(f"Cannot skip to position {new_index}")
     
     sonos.play_from_queue(new_index)
+    return get_info_from(sonos)
 
 @mcp.tool()
-def play_index(index: int, name: Optional[str] = None) -> None:
+def play_index(index: int, name: Optional[str] = None) -> Dict[str, Any]:
     """Play a specific track from the queue on a Sonos device.
     
     Args:
         index: The index of the track to play.
         name: The name of the device to play the track on. If None, uses the current device.
+        
+    Returns:
+        Dict[str, Any]: The device's state after playing the specified track, including name, volume, state, and track info.
         
     Raises:
         ValueError: If the index is out of the queue's range.
@@ -337,14 +362,18 @@ def play_index(index: int, name: Optional[str] = None) -> None:
     current = int(sonos.get_current_track_info()['playlist_position'])
     if index != current:
         sonos.play_from_queue(index)
+    return get_info_from(sonos)
 
 @mcp.tool()
-def remove_index_from_queue(index: int, name: Optional[str] = None) -> None:
+def remove_index_from_queue(index: int, name: Optional[str] = None) -> List[Dict[str, Any]]:
     """Remove a specific track from the queue on a Sonos device.
     
     Args:
         index: The index of the track to remove.
         name: The name of the device to remove the track from. If None, uses the current device.
+        
+    Returns:
+        List[Dict[str, Any]]: The updated queue after removing the track.
         
     Raises:
         ValueError: If the index is out of the queue's range.
@@ -356,6 +385,8 @@ def remove_index_from_queue(index: int, name: Optional[str] = None) -> None:
         raise ValueError(f"Index {index} is not within range 1-{queue_length}")
     
     sonos.remove_from_queue(index)
+    # Return the updated queue
+    return get_queue(name)
 
 def is_index_in_queue(index, queue_length):
     """Helper function to verify if an index exists within the queue length.
@@ -367,8 +398,7 @@ def is_index_in_queue(index, queue_length):
     Returns:
         bool: True if the index is within the queue length, False otherwise.
     """
-    """Helper function to verify if index exists"""
-    if 0 <= index <  queue_length:
+    if 0 <= index < queue_length:
         return True
     return False
 
@@ -381,7 +411,6 @@ def fetch_queue_length(sonos):
     Returns:
         int: The length of the queue.
     """
-    """Return the queue length"""
     return sonos.queue_size
 
 @mcp.tool()
