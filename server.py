@@ -1,4 +1,5 @@
-from typing import Dict, List, Optional, Any, Literal
+from typing import Dict, List, Optional, Any, Literal, Union
+
 from mcp.server.fastmcp import FastMCP
 import soco
 
@@ -424,6 +425,52 @@ def get_queue_length(name: Optional[str] = None) -> int:
         int: The length of the queue.
     """
     return fetch_queue_length(get_device(name))
+
+
+
+@mcp.tool()
+def add_sharelinks_to_queue(
+    links: Union[str, List[str]], 
+    play_after_add: bool = False,
+    name: Optional[str] = None
+) -> Dict[str, Any]:
+    """Add share links from services like Spotify to the Sonos queue.
+    
+    Args:
+        links: A single share link or a list of share links (URIs) from services like Spotify.
+                Example: 'spotify:track:6NmXV4o6bmp704aPGyTVVG' or 'x-spotify://spotify:track:2nGqLUUnLiTu93ltFV7BzC?'
+        play_after_add: Whether to start playing from the queue after adding the links. Defaults to True.
+        name: The name of the device to add the links to. If None, uses the current device.
+        
+    Returns:
+        Dict[str, Any]: The device's state after adding the links, including name, volume, state, and track info.
+        
+    Raises:
+        ValueError: If the device is not found or the links are invalid.
+    """
+    from soco.plugins.sharelink import ShareLinkPlugin
+    
+    device = get_device(name).group.coordinator
+    sharelink = ShareLinkPlugin(device)
+    
+    # Convert single link to list if needed
+    if isinstance(links, str):
+        links = [links]
+    
+    # Add each link to the queue
+    queue_positions = []
+    for link in links:
+        try:
+            position = sharelink.add_share_link_to_queue(link)
+            queue_positions.append(position)
+        except Exception as e:
+            raise ValueError(f"Failed to add link {link}: {str(e)}")
+    
+    # Play the first added track if requested
+    if play_after_add and queue_positions:
+        device.play_from_queue(queue_positions[0] - 1)  # Adjust for 0-based indexing
+    
+    return get_info_from(device)    
 
 def main():
     discover_devices()
