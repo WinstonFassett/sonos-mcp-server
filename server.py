@@ -434,7 +434,7 @@ def add_sharelinks_to_queue(
     play_after_add: bool = False,
     name: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Add share links from services like Spotify to the Sonos queue.
+    """Add share links to individual tracks from services like Spotify to the Sonos queue.
     
     Args:
         links: A single share link or a list of share links (URIs) from services like Spotify.

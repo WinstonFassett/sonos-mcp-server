@@ -84,6 +84,7 @@ Use the exposed MCP tools to interact with Sonos devices. The available tools in
 - `get_current_track_info`: Retrieve current track information for a Sonos device.
 - `volume`: Get or set the volume of a Sonos device.
 - `skip`, `play_index`, `remove_index_from_queue`: Manage tracks in the queue for a Sonos device.
+- `add_sharelinks_to_queue`: Add share links from services like Spotify to the Sonos queue.
 
 ## License
 
