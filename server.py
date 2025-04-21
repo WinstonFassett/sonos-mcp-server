@@ -151,7 +151,7 @@ def pause(name: Optional[str] = None) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: The device's state after pausing, including name, volume, state, and track info.
     """
-    device = get_device(name)
+    device = get_device(name).group.coordinator
     device.pause()
     return get_info_from(device)
 
@@ -165,7 +165,7 @@ def stop(name: Optional[str] = None) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: The device's state after stopping, including name, volume, state, and track info.
     """
-    device = get_device(name)
+    device = get_device(name).group.coordinator
     device.stop()
     return get_info_from(device)
 
@@ -179,7 +179,7 @@ def play(name: Optional[str] = None) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: The device's state after starting playback, including name, volume, state, and track info.
     """
-    device = get_device(name)
+    device = get_device(name).group.coordinator
     device.play()
     return get_info_from(device)
 
@@ -193,7 +193,7 @@ def next(name: Optional[str] = None) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: The device's state after skipping to the next track, including name, volume, state, and track info.
     """
-    device = get_device(name)
+    device = get_device(name).group.coordinator
     device.next()
     return get_info_from(device)
 
@@ -207,7 +207,7 @@ def previous(name: Optional[str] = None) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: The device's state after skipping to the previous track, including name, volume, state, and track info.
     """
-    device = get_device(name)
+    device = get_device(name).group.coordinator
     device.previous()
     return get_info_from(device)
 
@@ -329,7 +329,7 @@ def skip(increment: int = 1, name: Optional[str] = None) -> Dict[str, Any]:
     Raises:
         ValueError: If the new track position is out of the queue's range.
     """
-    sonos = get_device(name)
+    sonos = get_device(name).group.coordinator
     current = int(sonos.get_current_track_info()['playlist_position'])
     new_index = current + increment
     queue_length = sonos.queue_size
