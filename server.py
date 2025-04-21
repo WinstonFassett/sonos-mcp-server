@@ -429,7 +429,7 @@ def get_queue_length(name: Optional[str] = None) -> int:
 @mcp.tool()
 def add_service_tracks_to_queue(
     service: str,
-    track_ids: Union[str, List[str]], 
+    track_ids: str, 
     name: str,
     play_after_add: bool = False,
 ) -> Dict[str, Any]:
@@ -437,8 +437,8 @@ def add_service_tracks_to_queue(
     
     Args:
         service: The music service name (e.g., 'spotify', 'apple', 'tidal', 'deezer', etc.)
-        track_ids: A single track ID or list of track IDs from the specified service.
-                Example for Spotify: '6NmXV4o6bmp704aPGyTVVG' or '2nGqLUUnLiTu93ltFV7BzC'
+        track_ids: A string of track IDs separated by newlines from the specified service.
+                Example for Spotify: '6NmXV4o6bmp704aPGyTVVG\n2nGqLUUnLiTu93ltFV7BzC'
         play_after_add: Whether to start playing from the queue after adding the tracks. Defaults to False.
         name: The name of the device to add the tracks to. If None, uses the current device.
         
@@ -450,18 +450,16 @@ def add_service_tracks_to_queue(
     """
     from soco.plugins.sharelink import ShareLinkPlugin
     import logging
-    # print(f"DEBUG: Service: {service}, Track IDs: {track_ids}, Device Name: {name}, Play After Add: {play_after_add}")
     logger = logging.getLogger(__name__)
     device = get_device(name).group.coordinator
     sharelink = ShareLinkPlugin(device)
     
-    # Convert single ID to list if needed
-    if isinstance(track_ids, str):
-        track_ids = [track_ids]
+    # Split track IDs by newlines
+    track_ids_list = track_ids.strip().split("\n")
     
     # Format service track links
     service = service.lower()
-    links = [f"{service}:track:{track_id}" for track_id in track_ids]
+    links = [f"{service}:track:{track_id.strip()}" for track_id in track_ids_list if track_id.strip()]
     
     # Add each link to the queue
     queue_positions = []
