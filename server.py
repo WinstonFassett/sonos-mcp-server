@@ -426,36 +426,42 @@ def get_queue_length(name: Optional[str] = None) -> int:
     """
     return fetch_queue_length(get_device(name))
 
-
-
 @mcp.tool()
-def add_sharelinks_to_queue(
-    links: Union[str, List[str]], 
+def add_service_tracks_to_queue(
+    service: str,
+    track_ids: Union[str, List[str]], 
+    name: str,
     play_after_add: bool = False,
-    name: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Add share links to individual tracks from services like Spotify to the Sonos queue.
+    """Add tracks from music services to the Sonos queue.
     
     Args:
-        links: A single share link or a list of share links (URIs) from services like Spotify.
-                Example: 'spotify:track:6NmXV4o6bmp704aPGyTVVG' or 'x-spotify://spotify:track:2nGqLUUnLiTu93ltFV7BzC?'
-        play_after_add: Whether to start playing from the queue after adding the links. Defaults to True.
-        name: The name of the device to add the links to. If None, uses the current device.
+        service: The music service name (e.g., 'spotify', 'apple', 'tidal', 'deezer', etc.)
+        track_ids: A single track ID or list of track IDs from the specified service.
+                Example for Spotify: '6NmXV4o6bmp704aPGyTVVG' or '2nGqLUUnLiTu93ltFV7BzC'
+        play_after_add: Whether to start playing from the queue after adding the tracks. Defaults to False.
+        name: The name of the device to add the tracks to. If None, uses the current device.
         
     Returns:
-        Dict[str, Any]: The device's state after adding the links, including name, volume, state, and track info.
+        Dict[str, Any]: The device's state after adding the tracks, including name, volume, state, and track info.
         
     Raises:
-        ValueError: If the device is not found or the links are invalid.
+        ValueError: If the device is not found or the track IDs are invalid.
     """
     from soco.plugins.sharelink import ShareLinkPlugin
-    
+    import logging
+    # print(f"DEBUG: Service: {service}, Track IDs: {track_ids}, Device Name: {name}, Play After Add: {play_after_add}")
+    logger = logging.getLogger(__name__)
     device = get_device(name).group.coordinator
     sharelink = ShareLinkPlugin(device)
     
-    # Convert single link to list if needed
-    if isinstance(links, str):
-        links = [links]
+    # Convert single ID to list if needed
+    if isinstance(track_ids, str):
+        track_ids = [track_ids]
+    
+    # Format service track links
+    service = service.lower()
+    links = [f"{service}:track:{track_id}" for track_id in track_ids]
     
     # Add each link to the queue
     queue_positions = []
@@ -464,13 +470,13 @@ def add_sharelinks_to_queue(
             position = sharelink.add_share_link_to_queue(link)
             queue_positions.append(position)
         except Exception as e:
-            raise ValueError(f"Failed to add link {link}: {str(e)}")
+            raise ValueError(f"Failed to add track {link}: {str(e)}")
     
     # Play the first added track if requested
     if play_after_add and queue_positions:
         device.play_from_queue(queue_positions[0] - 1)  # Adjust for 0-based indexing
     
-    return get_info_from(device)    
+    return get_info_from(device)
 
 def main():
     discover_devices()
