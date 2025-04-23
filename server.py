@@ -212,25 +212,90 @@ def previous(name: Optional[str] = None) -> Dict[str, Any]:
     return get_info_from(device)
 
 @mcp.tool()
-def get_queue(name: Optional[str] = None) -> List[Dict[str, Any]]:
+def get_queue(
+    name: Optional[str] = None,
+    offset: Optional[Union[int, Literal["current"]]] = "current",
+    limit: Optional[int] = 20,
+    max_items: Optional[int] = None
+) -> List[Dict[str, Any]]:
     """Retrieve the queue of tracks for a Sonos device.
     
     Args:
         name: The name of the device to retrieve the queue from. If None, uses the current device.
+        offset: The position to start retrieving tracks from:
+               - If "current" (default): Start from the currently playing track
+               - If 0: Start from the beginning of the queue
+               - If positive integer: Start from that specific index
+               - If negative integer: Start from that position from the end
+        limit: Maximum number of items to return per request. Defaults to 20.
+        max_items: Total maximum items to return. If None, returns all items within the limit.
+                  Maximum allowed value is 500.
         
     Returns:
         List[Dict[str, Any]]: A list of dictionaries containing track information in the queue.
     """
-    sonos = get_device(name)
-    tracks = sonos.get_queue()
-    current = int(sonos.get_current_track_info()['playlist_position'])
-    return [{
-        "index": idx-1,
-        "title": track.title,
-        "artist": track.creator,
-        "album": track.album,
-        **({"current": True} if idx == current else {})
-    } for idx, track in enumerate(tracks, 1)]
+    sonos = get_device(name).group.coordinator
+    current_position = int(sonos.get_current_track_info()['playlist_position'])
+    queue_size = sonos.queue_size
+    
+    # Determine starting position
+    start_position = 0
+    if offset == "current":
+        # Start from current track position
+        start_position = max(0, current_position - 1)  # Convert to 0-based indexing
+    elif isinstance(offset, int):
+        if offset < 0:
+            # Handle negative indexes (from the end)
+            start_position = max(0, queue_size + offset)
+        else:
+            # Handle positive indexes
+            start_position = offset
+    
+    # Calculate how many items to fetch
+    items_to_fetch = limit
+    if max_items is not None:
+        # Cap max_items at 500
+        max_items = min(500, max_items)
+        items_to_fetch = min(limit, max_items)
+    else:
+        # If max_items not specified, still cap at 500
+        items_to_fetch = min(limit, 500)
+    
+    # Ensure we don't go past the queue size
+    end_position = min(start_position + items_to_fetch, queue_size)
+    
+    # Get the queue items
+    tracks = sonos.get_queue(start=start_position, max_items=items_to_fetch)
+    
+    result = []
+    for idx, track in enumerate(tracks):
+        track_info = {
+            "index": start_position + idx,  # Preserve actual queue index
+            "title": track.title,
+            "artist": track.creator,
+            "album": track.album,
+        }
+        
+        # Get duration safely, it might be in resources or as a direct attribute
+        try:
+            if hasattr(track, "duration"):
+                track_info["duration"] = track.duration
+            elif hasattr(track, "resources") and track.resources:
+                for resource in track.resources:
+                    if hasattr(resource, "duration") and resource.duration:
+                        track_info["duration"] = resource.duration
+                        break
+        except:
+            # If we can't get duration, just don't include it
+            pass
+            
+        # Mark current track
+        if start_position + idx + 1 == current_position:
+            track_info["current"] = True
+            
+        result.append(track_info)
+    
+    return result
 
 @mcp.tool()
 def mode(
@@ -246,7 +311,7 @@ def mode(
     Returns:
         str: The current play mode after the operation.
     """
-    device = get_device(name)
+    device = get_device(name).group.coordinator
     if mode:
         device.play_mode = mode
     return device.play_mode
@@ -308,7 +373,7 @@ def volume(volume: Optional[int] = None, name: Optional[str] = None) -> int:
         ValueError: If volume is not between 0 and 99.
         ValueError: If the specified device is not found.
     """
-    device = get_device(name)
+    device = get_device(name).group.coordinator
     if volume is not None:
         if not 0 <= volume <= 99:
             raise ValueError("Volume must be between 0 and 99")
