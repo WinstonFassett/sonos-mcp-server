@@ -11,10 +11,17 @@ This project is a Sonos MCP (Model Context Protocol) server that allows you to c
 
 ## Requirements
 
-- Python 3.7+
+- Python 3.12+
 - `uv` for managing Python projects
 
 ## Installation
+
+### From Git (Direct Install)
+```bash
+pip install git+https://github.com/WinstonFassett/sonos-mcp-server.git
+```
+
+### For Development
 
 1. Clone the repository:
    ```bash
@@ -62,10 +69,29 @@ uv run mcp dev server.py
 
 This command hosts an MCP Inspector for testing and debugging purposes.
 
-To run the server with SSE in development mode, use the SSE command for supergateway, and in a second terminal windor run:
+To run the server with SSE in development mode, use the SSE command for supergateway, and in a second terminal window run:
 
 ```bash
 npx @modelcontextprotocol/inspector
+```
+
+### Install in Claude Desktop
+
+After publishing to git, users can install directly:
+
+```bash
+mcp install git+https://github.com/WinstonFassett/sonos-mcp-server.git
+```
+
+Or add to Claude Desktop config:
+```json
+{
+  "mcpServers": {
+    "sonos": {
+      "command": "sonos-mcp-server"
+    }
+  }
+}
 ```
 
 ### Available MCP Tools
@@ -85,6 +111,21 @@ Use the exposed MCP tools to interact with Sonos devices. The available tools in
 - `volume`: Get or set the volume of a Sonos device.
 - `skip`, `play_index`, `remove_index_from_queue`: Manage tracks in the queue for a Sonos device.
 - `add_service_tracks_to_queue`: Add tracks from music services like Spotify, Apple Music, Tidal, or Deezer to the Sonos queue.
+
+## Publishing Updates
+
+After making changes:
+
+```bash
+git add .
+git commit -m "Description of changes"
+git push
+```
+
+Users can update with:
+```bash
+pip install --upgrade git+https://github.com/WinstonFassett/sonos-mcp-server.git
+```
 
 ## License
 
