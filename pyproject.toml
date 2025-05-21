@@ -3,7 +3,7 @@ name = "sonos-mcp-server"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "mcp[cli]>=1.5.0",
     "soco>=0.30.9",
