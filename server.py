@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Any, Literal
 from mcp.server.fastmcp import FastMCP
 import soco
+import os
 
 mcp = FastMCP("Sonos", dependencies=["soco"])
 devices: Dict[str, soco.SoCo] = {}
@@ -8,12 +9,35 @@ device: Optional[soco.SoCo] = None
 
 def discover_devices() -> Dict[str, soco.SoCo]:
     """Discover Sonos devices on the network and update the global devices dictionary.
-    
+
     Returns:
         Dict[str, soco.SoCo]: A dictionary mapping device names to their respective SoCo objects.
     """
     global devices
-    devices = {device.player_name: device for device in soco.discover()}
+
+    # Try SSDP discovery first
+    discovered = soco.discover()
+    if discovered:
+        devices = {device.player_name: device for device in discovered}
+        return devices
+
+    # Fallback to explicit IP addresses from environment
+    explicit_ips = os.environ.get("SONOS_DEVICE_IPS", "").strip()
+    if explicit_ips:
+        devices = {}
+        for ip in explicit_ips.split(","):
+            ip = ip.strip()
+            if ip:
+                try:
+                    sonos_device = soco.SoCo(ip)
+                    # Verify device is reachable by getting player name
+                    devices[sonos_device.player_name] = sonos_device
+                except Exception as e:
+                    print(f"Failed to connect to Sonos device at {ip}: {e}")
+        return devices
+
+    # No devices found
+    devices = {}
     return devices
 
 def get_devices() -> Dict[str, soco.SoCo]:
@@ -416,14 +440,51 @@ def fetch_queue_length(sonos):
 @mcp.tool()
 def get_queue_length(name: Optional[str] = None) -> int:
     """Retrieve the queue length for a Sonos device.
-    
+
     Args:
         name: The name of the device to retrieve the queue length from. If None, uses the current device.
-        
+
     Returns:
         int: The length of the queue.
     """
     return fetch_queue_length(get_device(name))
+
+@mcp.tool()
+def play_uri(uri: str, name: Optional[str] = None) -> Dict[str, Any]:
+    """Play a URI (Spotify, Apple Music, etc.) on a Sonos device.
+
+    Args:
+        uri: The URI to play (e.g., 'spotify:track:6SMHgPgNkhe9lneNTbgtel' or 'https://open.spotify.com/track/...')
+        name: The name of the device to play on. If None, uses the current device.
+
+    Returns:
+        Dict[str, Any]: The device's state after starting playback.
+    """
+    device = get_device(name)
+
+    # Convert Spotify HTTP URL to track ID
+    if uri.startswith("https://open.spotify.com/track/"):
+        track_id = uri.split("/track/")[1].split("?")[0]
+        uri = f"spotify:track:{track_id}"
+
+    # Handle Spotify URIs
+    if uri.startswith("spotify:track:"):
+        track_id = uri.split(":")[-1]
+
+        # Use the working Sonos-Spotify URI format with required parameters
+        # sid=9 (Spotify service ID), flags=0, sn=19 (sequence number)
+        spotify_uri = f"x-sonos-spotify:spotify%3atrack%3a{track_id}?sid=9&flags=0&sn=19"
+
+        # Clear queue, add track, and play
+        device.clear_queue()
+        device.add_uri_to_queue(uri=spotify_uri)
+        device.play_from_queue(0)
+    else:
+        # Play other URIs directly
+        device.play_uri(uri)
+        device.play()
+
+    return get_info_from(device)
 
 def main():
     discover_devices()
