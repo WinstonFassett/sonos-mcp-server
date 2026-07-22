@@ -13,7 +13,7 @@ def discover_devices() -> Dict[str, soco.SoCo]:
         Dict[str, soco.SoCo]: A dictionary mapping device names to their respective SoCo objects.
     """
     global devices
-    devices = {device.player_name: device for device in soco.discover()}
+    devices = {device.player_name: device for device in (soco.discover() or [])}
     return devices
 
 def get_devices() -> Dict[str, soco.SoCo]:
