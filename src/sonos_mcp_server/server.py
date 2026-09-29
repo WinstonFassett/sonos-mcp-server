@@ -17,12 +17,31 @@ device: Optional[soco.SoCo] = None
 
 def discover_devices() -> Dict[str, soco.SoCo]:
     """Discover Sonos devices on the network and update the global devices dictionary.
-    
+
+    Discovery order:
+    1. SONOS_DEVICE_IPS env var — comma-separated speaker IPs. Used when SSDP
+       multicast is unavailable (e.g. launchd services without Local Network
+       permission). Names are resolved over unicast SOAP, which always works.
+    2. soco.discover() SSDP multicast. Returns None when multicast is blocked;
+       that failure is tolerated and retried on the next call.
+
     Returns:
         Dict[str, soco.SoCo]: A dictionary mapping device names to their respective SoCo objects.
     """
     global devices
-    devices = {device.player_name: device for device in soco.discover()}
+    ips = os.environ.get("SONOS_DEVICE_IPS", "").strip()
+    if ips:
+        found = []
+        for ip in [ip.strip() for ip in ips.split(",") if ip.strip()]:
+            try:
+                found.append(soco.SoCo(ip))
+            except Exception:
+                continue
+        devices = {d.player_name: d for d in found if d.player_name}
+        return devices
+    discovered = soco.discover()
+    if discovered:
+        devices = {d.player_name: d for d in discovered}
     return devices
 
 def get_devices() -> Dict[str, soco.SoCo]:
@@ -553,8 +572,13 @@ def main():
     streamable-http). HTTP bind address comes from SONOS_MCP_HOST and
     SONOS_MCP_PORT (defaults 127.0.0.1:8000, path /mcp).
     """
-    discover_devices()
-    device = get_device()
+    try:
+        discover_devices()
+        device = get_device()
+    except Exception as e:
+        # Discovery can fail at startup (e.g. SSDP blocked under launchd).
+        # Devices are discovered lazily on each tool call via get_devices().
+        print(f"Startup discovery failed, will retry lazily: {e}")
     transport = os.environ.get("SONOS_MCP_TRANSPORT", "stdio")
     mcp.run(transport=transport)  # type: ignore[arg-type]
 
