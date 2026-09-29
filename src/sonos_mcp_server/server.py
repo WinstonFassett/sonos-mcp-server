@@ -5,12 +5,29 @@ from typing import Dict, List, Optional, Any, Literal, Union
 import soco
 from soco.plugins.sharelink import ShareLinkPlugin
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
+
+# Extra Host-header names for HTTP transports (e.g. a Tailscale Serve
+# hostname). The MCP SDK's DNS-rebinding protection rejects unknown hosts.
+_extra_hosts = [
+    h.strip()
+    for h in os.environ.get("SONOS_MCP_ALLOWED_HOSTS", "").split(",")
+    if h.strip()
+]
+
+_transport_security = None
+if _extra_hosts:
+    _transport_security = TransportSecuritySettings(
+        allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"] + _extra_hosts,
+        allowed_origins=["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"],
+    )
 
 mcp = FastMCP(
     "Sonos",
     dependencies=["soco>=0.30.9"],
     host=os.environ.get("SONOS_MCP_HOST", "127.0.0.1"),
     port=int(os.environ.get("SONOS_MCP_PORT", "8000")),
+    transport_security=_transport_security,
 )
 devices: Dict[str, soco.SoCo] = {}
 device: Optional[soco.SoCo] = None
