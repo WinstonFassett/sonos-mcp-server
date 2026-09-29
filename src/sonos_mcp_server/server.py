@@ -1,11 +1,17 @@
 """Sonos MCP Server - Control Sonos speakers via Model Context Protocol."""
 
+import os
 from typing import Dict, List, Optional, Any, Literal, Union
 import soco
 from soco.plugins.sharelink import ShareLinkPlugin
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("Sonos", dependencies=["soco>=0.30.9"])
+mcp = FastMCP(
+    "Sonos",
+    dependencies=["soco>=0.30.9"],
+    host=os.environ.get("SONOS_MCP_HOST", "127.0.0.1"),
+    port=int(os.environ.get("SONOS_MCP_PORT", "8000")),
+)
 devices: Dict[str, soco.SoCo] = {}
 device: Optional[soco.SoCo] = None
 
@@ -541,10 +547,16 @@ def add_service_tracks_to_queue(
     return get_info_from(device)
 
 def main():
-    """Main entry point for the server."""
+    """Main entry point for the server.
+
+    Transport is selected via SONOS_MCP_TRANSPORT (stdio | sse |
+    streamable-http). HTTP bind address comes from SONOS_MCP_HOST and
+    SONOS_MCP_PORT (defaults 127.0.0.1:8000, path /mcp).
+    """
     discover_devices()
     device = get_device()
-    mcp.run()
+    transport = os.environ.get("SONOS_MCP_TRANSPORT", "stdio")
+    mcp.run(transport=transport)  # type: ignore[arg-type]
 
 if __name__ == "__main__":
     main()
