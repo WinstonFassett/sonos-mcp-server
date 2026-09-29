@@ -45,18 +45,35 @@ Run the server using stdio:
 uv run mcp run server.py
 ```
 
-#### SSE with Supergateway
+#### HTTP (streamable-http)
 
-Run the server with SSE using the `supergateway` tool:
+The server supports the MCP streamable-http transport natively (mcp SDK >= 1.12). No proxy needed:
+
+```bash
+SONOS_MCP_TRANSPORT=streamable-http \
+SONOS_MCP_HOST=127.0.0.1 \
+SONOS_MCP_PORT=8090 \
+uv run sonos-mcp-server
+```
+
+Endpoint: `http://127.0.0.1:8090/mcp`
+
+Environment variables:
+
+| Var | Default | Notes |
+|---|---|---|
+| `SONOS_MCP_TRANSPORT` | `stdio` | `stdio`, `sse`, or `streamable-http` |
+| `SONOS_MCP_HOST` | `127.0.0.1` | HTTP bind address |
+| `SONOS_MCP_PORT` | `8000` | HTTP port (path is `/mcp`) |
+| `SONOS_MCP_ALLOWED_HOSTS` | _(localhost only)_ | Extra Host headers to accept, comma-separated. Needed when serving behind a proxy with a different hostname (e.g. `mac-mini.tailc3138.ts.net:*`). |
+| `SONOS_DEVICE_IPS` | _(SSDP discovery)_ | Comma-separated speaker IPs. Skips SSDP multicast and resolves names over unicast SOAP — required when the process can't multicast (e.g. launchd without Local Network permission). |
+
+#### Legacy: SSE with supergateway
+
+Older alternative (deprecated — prefer streamable-http above):
 
 ```bash
 npx -y supergateway --port 8000 --stdio "uv run mcp run server.py"
-```
-
-Alternatively, you can use the convenience script provided in the repository:
-
-```bash
-./npx-serve-sse-8000.sh
 ```
 
 ### Development
