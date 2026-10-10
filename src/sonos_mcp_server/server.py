@@ -1,11 +1,15 @@
 """Sonos MCP Server - Control Sonos speakers via Model Context Protocol."""
 
 import os
+import urllib.parse
 from typing import Dict, List, Optional, Any, Literal, Union
+import httpx
 import soco
 from soco.plugins.sharelink import ShareLinkPlugin
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.requests import Request
+from starlette.responses import Response
 
 # Extra Host-header names for HTTP transports (e.g. a Tailscale Serve
 # hostname). The MCP SDK's DNS-rebinding protection rejects unknown hosts.
@@ -31,6 +35,62 @@ mcp = FastMCP(
 )
 devices: Dict[str, soco.SoCo] = {}
 device: Optional[soco.SoCo] = None
+
+# soco's album_art URLs point at the speaker's own LAN IP (e.g.
+# http://192.168.86.44:1400/getaa?...), which is correct for a client on the
+# same LAN but unreachable for anyone viewing an MCP client (e.g. an Executor
+# artifact) over Tailscale from off the home network -- Tailscale isn't
+# advertising a subnet route for the LAN. This server already runs on the LAN
+# (it talks to the speakers directly) and is itself Tailscale-served, so it
+# rewrites album_art to its own /album-art proxy route, which fetches the
+# real image server-side and streams it back.
+#
+# SONOS_MCP_PUBLIC_URL overrides the derived base entirely. Otherwise it's
+# derived from the first SONOS_MCP_ALLOWED_HOSTS entry (stripping a trailing
+# ":*") plus SONOS_MCP_PORT. If neither is set, album_art is left as-is.
+def _public_base_url() -> str:
+    override = os.environ.get("SONOS_MCP_PUBLIC_URL", "").strip()
+    if override:
+        return override.rstrip("/")
+    if not _extra_hosts:
+        return ""
+    hostname = _extra_hosts[0].split(":")[0]
+    port = os.environ.get("SONOS_MCP_PORT", "8000")
+    return f"https://{hostname}:{port}"
+
+_PUBLIC_BASE_URL = _public_base_url()
+
+def _rewrite_album_art(url: Optional[str]) -> Optional[str]:
+    if not url or not _PUBLIC_BASE_URL:
+        return url
+    return f"{_PUBLIC_BASE_URL}/album-art?u={urllib.parse.quote(url, safe='')}"
+
+@mcp.custom_route("/album-art", methods=["GET"])
+async def album_art_proxy(request: Request) -> Response:
+    """Fetch a speaker's album art server-side and stream it back.
+
+    Restricted to the discovered devices' own IPs on port 1400 (the Sonos
+    HTTP control port) so this can't be used as an open proxy to arbitrary
+    hosts -- this route is reachable over Tailscale.
+    """
+    target = request.query_params.get("u")
+    if not target:
+        return Response(status_code=400, content="missing u")
+    parsed = urllib.parse.urlparse(target)
+    allowed_ips = {d.ip_address for d in get_devices().values()}
+    if parsed.scheme != "http" or parsed.hostname not in allowed_ips or parsed.port != 1400:
+        return Response(status_code=403, content="album art host not allowed")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            upstream = await client.get(target)
+            upstream.raise_for_status()
+    except Exception as e:
+        return Response(status_code=502, content=f"upstream fetch failed: {e}")
+    return Response(
+        content=upstream.content,
+        media_type=upstream.headers.get("content-type", "image/jpeg"),
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 def discover_devices() -> Dict[str, soco.SoCo]:
     """Discover Sonos devices on the network and update the global devices dictionary.
@@ -125,7 +185,7 @@ def get_info_from(device: soco.SoCo) -> Dict[str, Any]:
             "position": track_info.get("position"),
             "duration": track_info.get("duration"),
             "playlist_position": track_info.get("playlist_position"),
-            "album_art": track_info.get("album_art")
+            "album_art": _rewrite_album_art(track_info.get("album_art"))
         }
     }
 
