@@ -1,7 +1,9 @@
 """Sonos MCP Server - Control Sonos speakers via Model Context Protocol."""
 
+import base64
 import os
 import urllib.parse
+from functools import lru_cache
 from typing import Dict, List, Optional, Any, Literal, Union
 import httpx
 import soco
@@ -37,17 +39,29 @@ devices: Dict[str, soco.SoCo] = {}
 device: Optional[soco.SoCo] = None
 
 # soco's album_art URLs point at the speaker's own LAN IP (e.g.
-# http://192.168.86.44:1400/getaa?...), which is correct for a client on the
-# same LAN but unreachable for anyone viewing an MCP client (e.g. an Executor
-# artifact) over Tailscale from off the home network -- Tailscale isn't
-# advertising a subnet route for the LAN. This server already runs on the LAN
-# (it talks to the speakers directly) and is itself Tailscale-served, so it
-# rewrites album_art to its own /album-art proxy route, which fetches the
-# real image server-side and streams it back.
+# http://192.168.86.44:1400/getaa?...). Two separate problems follow:
+#
+# 1. That LAN IP is unreachable for anyone using an MCP client (e.g. an
+#    Executor artifact) over Tailscale from off the home network -- Tailscale
+#    isn't advertising a subnet route for the LAN.
+# 2. Even once reachable, an Executor artifact's embedded view enforces an
+#    `img-src data: blob:` CSP -- it refuses to load ANY remote image URL,
+#    reachable or not. Only inline `data:`/`blob:` images render there (a
+#    link opened in its own tab isn't under that CSP, which is why it "works
+#    in a new tab" but not embedded).
+#
+# This server already runs on the LAN (it talks to the speakers directly)
+# and is itself Tailscale-served, so it fetches the real image server-side
+# and inlines it as a `data:` URI -- CSP-safe everywhere, and sidesteps the
+# LAN-reachability problem too since the fetch happens here, not in the
+# viewer's browser. `/album-art` is kept as a plain proxy route (reachable,
+# but still subject to each viewer's own CSP) for anything that wants a
+# plain URL instead, e.g. opening the image directly.
 #
 # SONOS_MCP_PUBLIC_URL overrides the derived base entirely. Otherwise it's
 # derived from the first SONOS_MCP_ALLOWED_HOSTS entry (stripping a trailing
-# ":*") plus SONOS_MCP_PORT. If neither is set, album_art is left as-is.
+# ":*") plus SONOS_MCP_PORT. If neither is set, the /album-art fallback is
+# skipped (data: URIs still work regardless, since they don't need a base URL).
 def _public_base_url() -> str:
     override = os.environ.get("SONOS_MCP_PUBLIC_URL", "").strip()
     if override:
@@ -60,25 +74,49 @@ def _public_base_url() -> str:
 
 _PUBLIC_BASE_URL = _public_base_url()
 
+def _is_allowed_album_art_url(url: str) -> bool:
+    """Restrict to the discovered devices' own IPs on port 1400 (the Sonos
+    HTTP control port) -- both the data-URI fetch and the /album-art route
+    are reachable over Tailscale, so neither may become an open proxy to
+    arbitrary hosts."""
+    parsed = urllib.parse.urlparse(url)
+    allowed_ips = {d.ip_address for d in get_devices().values()}
+    return parsed.scheme == "http" and parsed.hostname in allowed_ips and parsed.port == 1400
+
+# Cached by URL: the same track's album art is polled repeatedly (every 2-15s)
+# while it's playing, so this turns most polls into a dict lookup instead of
+# a LAN round-trip. Bounded size evicts art for tracks no longer playing.
+@lru_cache(maxsize=64)
+def _fetch_album_art_data_uri(url: str) -> Optional[str]:
+    if not _is_allowed_album_art_url(url):
+        return None
+    try:
+        resp = httpx.get(url, timeout=10)
+        resp.raise_for_status()
+    except Exception:
+        return None
+    content_type = resp.headers.get("content-type", "image/jpeg")
+    b64 = base64.b64encode(resp.content).decode("ascii")
+    return f"data:{content_type};base64,{b64}"
+
 def _rewrite_album_art(url: Optional[str]) -> Optional[str]:
-    if not url or not _PUBLIC_BASE_URL:
+    if not url:
         return url
-    return f"{_PUBLIC_BASE_URL}/album-art?u={urllib.parse.quote(url, safe='')}"
+    data_uri = _fetch_album_art_data_uri(url)
+    if data_uri:
+        return data_uri
+    if _PUBLIC_BASE_URL:
+        return f"{_PUBLIC_BASE_URL}/album-art?u={urllib.parse.quote(url, safe='')}"
+    return url
 
 @mcp.custom_route("/album-art", methods=["GET"])
 async def album_art_proxy(request: Request) -> Response:
-    """Fetch a speaker's album art server-side and stream it back.
-
-    Restricted to the discovered devices' own IPs on port 1400 (the Sonos
-    HTTP control port) so this can't be used as an open proxy to arbitrary
-    hosts -- this route is reachable over Tailscale.
-    """
+    """Fetch a speaker's album art server-side and stream it back as a plain
+    URL (not inlined) -- for opening directly, outside an artifact's CSP."""
     target = request.query_params.get("u")
     if not target:
         return Response(status_code=400, content="missing u")
-    parsed = urllib.parse.urlparse(target)
-    allowed_ips = {d.ip_address for d in get_devices().values()}
-    if parsed.scheme != "http" or parsed.hostname not in allowed_ips or parsed.port != 1400:
+    if not _is_allowed_album_art_url(target):
         return Response(status_code=403, content="album art host not allowed")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
