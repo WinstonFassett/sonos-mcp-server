@@ -106,6 +106,19 @@ def _rewrite_album_art(url: Optional[str]) -> Optional[str]:
         return f"{_PUBLIC_BASE_URL}/album-art?u={urllib.parse.quote(url, safe='')}"
     return url
 
+def _route_art_via_fast_speaker(url: str) -> str:
+    """Fetch art from the speaker named by SONOS_MCP_ART_SPEAKER_IP, if set.
+
+    Any speaker serves the same art for any track, and speakers differ a lot in
+    speed (Patio ~3.5s vs ~1s for the others, same 179 KB image). The override
+    must be one of the known speaker IPs; otherwise the URL is left unchanged.
+    """
+    ip = os.environ.get("SONOS_MCP_ART_SPEAKER_IP", "").strip()
+    if not ip or ip not in {d.ip_address for d in get_devices().values()}:
+        return url
+    parts = urllib.parse.urlsplit(url)
+    return urllib.parse.urlunsplit(parts._replace(netloc=f"{ip}:{parts.port or 1400}"))
+
 @mcp.custom_route("/album-art", methods=["GET"])
 async def album_art_proxy(request: Request) -> Response:
     """Fetch a speaker's album art server-side and stream it back as a plain
@@ -115,8 +128,9 @@ async def album_art_proxy(request: Request) -> Response:
         return Response(status_code=400, content="missing u")
     if not _is_allowed_album_art_url(target):
         return Response(status_code=403, content="album art host not allowed")
+    target = _route_art_via_fast_speaker(target)
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=30) as client:
             upstream = await client.get(target)
             upstream.raise_for_status()
     except Exception as e:
@@ -124,7 +138,7 @@ async def album_art_proxy(request: Request) -> Response:
     return Response(
         content=upstream.content,
         media_type=upstream.headers.get("content-type", "image/jpeg"),
-        headers={"Cache-Control": "public, max-age=300"},
+        headers={"Cache-Control": "public, max-age=86400"},
     )
 
 def discover_devices() -> Dict[str, soco.SoCo]:
