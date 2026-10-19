@@ -102,9 +102,6 @@ def _fetch_album_art_data_uri(url: str) -> Optional[str]:
 def _rewrite_album_art(url: Optional[str]) -> Optional[str]:
     if not url:
         return url
-    data_uri = _fetch_album_art_data_uri(url)
-    if data_uri:
-        return data_uri
     if _PUBLIC_BASE_URL:
         return f"{_PUBLIC_BASE_URL}/album-art?u={urllib.parse.quote(url, safe='')}"
     return url
