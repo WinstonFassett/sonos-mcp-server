@@ -253,6 +253,12 @@ def previous(name: Optional[str] = None) -> Dict[str, Any]:
     device.previous()
     return get_info_from(device)
 
+def _queue_item_art_url(track: Any) -> Optional[str]:
+    """Return the soco album_art_uri as a short URL string, or None."""
+    art = getattr(track, "album_art_uri", None)
+    return art if isinstance(art, str) and art else None
+
+
 @mcp.tool()
 def get_queue(
     name: Optional[str] = None,
@@ -316,6 +322,7 @@ def get_queue(
             "title": track.title,
             "artist": track.creator,
             "album": track.album,
+            "album_art": _queue_item_art_url(track),
         }
         
         # Get duration safely, it might be in resources or as a direct attribute
