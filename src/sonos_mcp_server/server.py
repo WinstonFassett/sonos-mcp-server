@@ -106,6 +106,11 @@ def _rewrite_album_art(url: Optional[str]) -> Optional[str]:
         return f"{_PUBLIC_BASE_URL}/album-art?u={urllib.parse.quote(url, safe='')}"
     return url
 
+# Art never changes for a given track URL, and each speaker fetch takes ~1s, so keep
+# recent images in memory. Oldest entries are dropped past _ART_CACHE_MAX.
+_ART_CACHE: Dict[str, tuple] = {}
+_ART_CACHE_MAX = 300
+
 def _route_art_via_fast_speaker(url: str) -> str:
     """Fetch art from the speaker named by SONOS_MCP_ART_SPEAKER_IP, if set.
 
@@ -128,6 +133,11 @@ async def album_art_proxy(request: Request) -> Response:
         return Response(status_code=400, content="missing u")
     if not _is_allowed_album_art_url(target):
         return Response(status_code=403, content="album art host not allowed")
+    cache_key = target
+    hit = _ART_CACHE.get(cache_key)
+    if hit is not None:
+        return Response(content=hit[0], media_type=hit[1],
+                        headers={"Cache-Control": "public, max-age=86400", "X-Art-Cache": "hit"})
     target = _route_art_via_fast_speaker(target)
     try:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -135,10 +145,14 @@ async def album_art_proxy(request: Request) -> Response:
             upstream.raise_for_status()
     except Exception as e:
         return Response(status_code=502, content=f"upstream fetch failed: {e}")
+    media_type = upstream.headers.get("content-type", "image/jpeg")
+    _ART_CACHE[cache_key] = (upstream.content, media_type)
+    while len(_ART_CACHE) > _ART_CACHE_MAX:
+        _ART_CACHE.pop(next(iter(_ART_CACHE)))
     return Response(
         content=upstream.content,
-        media_type=upstream.headers.get("content-type", "image/jpeg"),
-        headers={"Cache-Control": "public, max-age=86400"},
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=86400", "X-Art-Cache": "miss"},
     )
 
 def discover_devices() -> Dict[str, soco.SoCo]:
