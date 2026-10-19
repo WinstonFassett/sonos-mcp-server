@@ -2,6 +2,7 @@
 
 import base64
 import os
+import threading
 import urllib.parse
 from functools import lru_cache
 from typing import Dict, List, Optional, Any, Literal, Union
@@ -376,18 +377,57 @@ def previous(name: Optional[str] = None) -> Dict[str, Any]:
     device.previous()
     return get_info_from(device)
 
-def _queue_item_art_url(track: Any, speaker_ip: str) -> Optional[str]:
-    """Return the queue item art as the same proxy URL track art uses, or None.
+def _queue_item_art_target(track: Any, speaker_ip: str) -> Optional[str]:
+    """Return the speaker art URL for a queue item (absolute), or None.
 
-    soco reports queue art as a relative path (/getaa?...). Make it absolute on the
-    speaker, then run it through _rewrite_album_art like the track card does.
+    soco reports queue art as a relative path (/getaa?...); make it absolute on the speaker.
     """
     art = getattr(track, "album_art_uri", None)
     if not (isinstance(art, str) and art):
         return None
     if art.startswith("/"):
         art = f"http://{speaker_ip}:1400{art}"
-    return _rewrite_album_art(art)
+    return art
+
+
+def _queue_item_art_url(track: Any, speaker_ip: str) -> Optional[str]:
+    """Return the queue item art as the same proxy URL track art uses, or None."""
+    target = _queue_item_art_target(track, speaker_ip)
+    return _rewrite_album_art(target) if target else None
+
+
+_ART_WARM_LOCK = threading.Lock()
+
+
+def _warm_art_cache(targets: List[str]) -> None:
+    """Fetch these speaker art URLs one at a time into _ART_CACHE (best effort).
+
+    A speaker serves one art request at a time, so fetching in the order the user
+    will see them (current track first) beats letting a browser request all at once.
+    Runs in a background thread; failures are skipped, the relay will retry on demand.
+    """
+    try:
+        with httpx.Client(timeout=30) as client:
+            for target in targets:
+                if target in _ART_CACHE:
+                    continue
+                try:
+                    upstream = client.get(_route_art_via_fast_speaker(target))
+                    upstream.raise_for_status()
+                except Exception:
+                    continue
+                _ART_CACHE[target] = (upstream.content, upstream.headers.get("content-type", "image/jpeg"))
+                while len(_ART_CACHE) > _ART_CACHE_MAX:
+                    _ART_CACHE.pop(next(iter(_ART_CACHE)))
+    finally:
+        _ART_WARM_LOCK.release()
+
+
+def _start_art_warmup(targets: List[str]) -> None:
+    """Start a background warm-up unless one is already running."""
+    if not targets or not _ART_WARM_LOCK.acquire(blocking=False):
+        return
+    threading.Thread(target=_warm_art_cache, args=(targets,), daemon=True).start()
 
 
 @mcp.tool()
@@ -447,13 +487,21 @@ def get_queue(
     tracks = sonos.get_queue(start=start_position, max_items=items_to_fetch)
     
     result = []
+    art_targets = []
     for idx, track in enumerate(tracks):
+        art_target = _queue_item_art_target(track, sonos.ip_address)
+        if art_target:
+            # current track first, then the rest in queue order
+            if start_position + idx + 1 == current_position:
+                art_targets.insert(0, art_target)
+            else:
+                art_targets.append(art_target)
         track_info = {
             "index": start_position + idx,  # Preserve actual queue index
             "title": track.title,
             "artist": track.creator,
             "album": track.album,
-            "album_art": _queue_item_art_url(track, sonos.ip_address),
+            "album_art": _rewrite_album_art(art_target) if art_target else None,
         }
         
         # Get duration safely, it might be in resources or as a direct attribute
@@ -474,7 +522,8 @@ def get_queue(
             track_info["current"] = True
             
         result.append(track_info)
-    
+
+    _start_art_warmup(art_targets)
     return result
 
 @mcp.tool()
