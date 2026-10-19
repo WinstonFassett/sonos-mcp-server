@@ -348,10 +348,18 @@ def previous(name: Optional[str] = None) -> Dict[str, Any]:
     device.previous()
     return get_info_from(device)
 
-def _queue_item_art_url(track: Any) -> Optional[str]:
-    """Return the soco album_art_uri as a short URL string, or None."""
+def _queue_item_art_url(track: Any, speaker_ip: str) -> Optional[str]:
+    """Return the queue item art as the same proxy URL track art uses, or None.
+
+    soco reports queue art as a relative path (/getaa?...). Make it absolute on the
+    speaker, then run it through _rewrite_album_art like the track card does.
+    """
     art = getattr(track, "album_art_uri", None)
-    return art if isinstance(art, str) and art else None
+    if not (isinstance(art, str) and art):
+        return None
+    if art.startswith("/"):
+        art = f"http://{speaker_ip}:1400{art}"
+    return _rewrite_album_art(art)
 
 
 @mcp.tool()
@@ -417,7 +425,7 @@ def get_queue(
             "title": track.title,
             "artist": track.creator,
             "album": track.album,
-            "album_art": _queue_item_art_url(track),
+            "album_art": _queue_item_art_url(track, sonos.ip_address),
         }
         
         # Get duration safely, it might be in resources or as a direct attribute
